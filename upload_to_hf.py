@@ -185,30 +185,35 @@ def upload_alignment_to_hf(
     # Cast the audio column to Audio feature (this handles loading the actual audio files)
     dataset = dataset.cast_column("audio", Audio())
     
+    # Split into train (95%) and test (5%)
+    split_dataset = dataset.train_test_split(test_size=0.05, seed=42)
+
     # Push to hub with retry logic for timeout errors
-    for attempt in range(max_retries):
-        try:
-            dataset.push_to_hub(
-                repo_id=repo_id,
-                config_name=language,  # Use language as the config name
-                split="train",  # HF requires a split name, but you can ignore it when loading
-                private=private,
-                max_shard_size=max_shard_size,  # Smaller shards for more reliable uploads
-                commit_message=f"Upload {language} dataset",
-            )
-            print(f"✓ Uploaded {len(dataset)} samples for '{language}' to {repo_id}")
-            return
-        except Exception as e:
-            if "timeout" in str(e).lower() or "ReadTimeout" in str(type(e).__name__):
-                if attempt < max_retries - 1:
-                    wait_time = (attempt + 1) * 30  # 30s, 60s, 90s
-                    print(f"⚠ Timeout on attempt {attempt + 1}/{max_retries}. Retrying in {wait_time}s...")
-                    time.sleep(wait_time)
+    for split_name in ["train", "test"]:
+        split_data = split_dataset[split_name]
+        for attempt in range(max_retries):
+            try:
+                split_data.push_to_hub(
+                    repo_id=repo_id,
+                    config_name=language,  # Use language as the config name
+                    split=split_name,
+                    private=private,
+                    max_shard_size=max_shard_size,  # Smaller shards for more reliable uploads
+                    commit_message=f"Upload {language} {split_name} split",
+                )
+                print(f"✓ Uploaded {len(split_data)} samples for '{language}' ({split_name}) to {repo_id}")
+                break
+            except Exception as e:
+                if "timeout" in str(e).lower() or "ReadTimeout" in str(type(e).__name__):
+                    if attempt < max_retries - 1:
+                        wait_time = (attempt + 1) * 30  # 30s, 60s, 90s
+                        print(f"⚠ Timeout on attempt {attempt + 1}/{max_retries}. Retrying in {wait_time}s...")
+                        time.sleep(wait_time)
+                    else:
+                        print(f"✗ Failed after {max_retries} attempts. The data may have uploaded - check the repo.")
+                        raise
                 else:
-                    print(f"✗ Failed after {max_retries} attempts. The data may have uploaded - check the repo.")
                     raise
-            else:
-                raise
 
 LANGUAGES = [
     'Apali',
@@ -225,7 +230,6 @@ LANGUAGES = [
     'Gofa',
     'Gujarati',
     'Haitian Creole',
-    # 'Haryanvi',
     'Hausa',
     'Hiligaynon',
     'Hindi',
@@ -243,7 +247,6 @@ LANGUAGES = [
     'Swahili',
     'Tamil',
     'Telugu',
-    # 'Toma',
     'Turkish',
     'Twi (Akuapem)',
     'Twi (Asante)',
@@ -251,7 +254,7 @@ LANGUAGES = [
     'Urdu',
     'Vietnamese',
     'Yoruba'
-][::-1]
+]
 base_dir = "data/audios"
 
 for language in tqdm(LANGUAGES, desc="Uploading languages"):
