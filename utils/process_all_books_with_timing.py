@@ -64,6 +64,10 @@ def build_dataframe(base_path, timing_folder=None, usfm_folder=None):
                 print(f"Warning: Could not find audio folder for {book_folder}")
                 continue
             book_sfm = os.path.join(usfm_folder, f"{book_code}.usfm")
+            if not os.path.exists(book_sfm):
+                book_sfm_usx = os.path.join(usfm_folder, f"{book_code}.usx")
+                if os.path.exists(book_sfm_usx):
+                    book_sfm = book_sfm_usx
             output = os.path.join(output_base, book_folder)
             
             # Check if USFM file exists

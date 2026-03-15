@@ -99,7 +99,9 @@ if __name__ == '__main__':
         
         # Global dictionary to keep verse, [time_start, time_end]
         dict_verse_time = defaultdict(lambda : [])
-        timing_file_path = os.path.join(path_to_timings, f'{book_chap}.txt')
+        timing_file_path = os.path.join(path_to_timings, book, f'{book_chap}.txt')
+        if not os.path.exists(timing_file_path):
+            timing_file_path = os.path.join(path_to_timings, f'{book_chap}.txt')
         print(f"\n  Looking for timing file: {timing_file_path}")
         print(f"  Timing file exists: {os.path.exists(timing_file_path)}")
         
