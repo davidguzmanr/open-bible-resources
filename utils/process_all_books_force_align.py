@@ -48,16 +48,34 @@ import pandas as pd
 TESTAMENTS = ["New Testament - mp3", "Old Testament - mp3"]
 
 
+def find_audio_files(folder_path: str) -> tuple[str | None, list[str]]:
+    """
+    Recursively find audio files (mp3/wav) and return (folder_containing_them, list_of_files).
+    """
+    for root, dirs, files in os.walk(folder_path):
+        audio_files = [f for f in files if f.lower().endswith(('.mp3', '.wav')) and '_' in f]
+        if audio_files:
+            return root, audio_files
+    return None, []
+
+
 def get_book_code(book_folder_path: str) -> str | None:
     """
     Extract book code from audio files in the folder.
-    
+
+    Searches recursively to handle nested folder structures.
     Looks for files like '1CO_001.mp3' and extracts '1CO'.
     """
-    for f in os.listdir(book_folder_path):
-        if f.lower().endswith(('.mp3', '.wav')) and '_' in f:
-            return f.split('_')[0]
+    _, audio_files = find_audio_files(book_folder_path)
+    if audio_files:
+        return audio_files[0].split('_')[0]
     return None
+
+
+def get_audio_folder(book_folder_path: str) -> str | None:
+    """Get the actual (possibly nested) folder containing audio files."""
+    audio_folder, _ = find_audio_files(book_folder_path)
+    return audio_folder
 
 
 def find_usx_file(usfm_folder: str, book_code: str) -> str | None:
@@ -125,12 +143,18 @@ def build_dataframe(base_path: str, usfm_folder: str | None = None) -> pd.DataFr
             if not os.path.isdir(book_folder_path):
                 continue
             
-            # Get book code from audio files
+            # Get book code from audio files (searches recursively)
             book_code = get_book_code(book_folder_path)
             if book_code is None:
                 print(f"Warning: Could not find book code for {book_folder}")
                 continue
-            
+
+            # Get the actual folder containing the audio files (may be nested)
+            audio_folder = get_audio_folder(book_folder_path)
+            if audio_folder is None:
+                print(f"Warning: Could not find audio folder for {book_folder}")
+                continue
+
             # Find USX file
             book_usx = find_usx_file(usfm_folder, book_code)
             usx_exists = book_usx is not None
@@ -145,7 +169,7 @@ def build_dataframe(base_path: str, usfm_folder: str | None = None) -> pd.DataFr
                 'book_name': book_folder,
                 'book_code': book_code,
                 'testament': testament,
-                'audio_folder': book_folder_path,
+                'audio_folder': audio_folder,
                 'book_usx': book_usx,
                 'output': output,
                 'usx_exists': usx_exists
