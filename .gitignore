@@ -209,14 +209,13 @@ __marimo__/
 data/
 logs/
 jobs/
-
 open-bible-scripts/
 data-checker/
 Studio/
 pretrained_models/
-
 Swahili/
 Apali/
 Turkish/
+diarization
+
 dev-single-language.ipynb
-Open Bible diarization.ipynb

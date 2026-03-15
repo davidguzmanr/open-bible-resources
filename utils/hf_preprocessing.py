@@ -169,20 +169,16 @@ def get_alignment_dataframe(language: str, base_dir: str = "data/audios") -> pd.
 def prepare_alignment_dataset(
     alignment_df: pd.DataFrame,
     num_std_devs: float = 3.0,
-    test_size: float = 0.05,
-    seed: int = 42,
 ):
     """
-    Preprocess an alignment DataFrame and return a train/test split HF DatasetDict.
+    Preprocess an alignment DataFrame and return an HF Dataset.
 
     Args:
         alignment_df: DataFrame with audio_file, text, and metadata columns
         num_std_devs: Number of standard deviations for outlier removal
-        test_size: Fraction of data to use for the test split
-        seed: Random seed for the train/test split
 
     Returns:
-        DatasetDict with "train" and "test" splits
+        Dataset with audio and metadata columns
     """
     df = alignment_df.copy()
 
@@ -198,8 +194,7 @@ def prepare_alignment_dataset(
     dataset = Dataset.from_pandas(df, preserve_index=False)
     dataset = dataset.cast_column("audio", Audio())
 
-    # Split into train and test
-    return dataset.train_test_split(test_size=test_size, seed=seed)
+    return dataset
 
 
 def upload_alignment_to_hf(
@@ -209,6 +204,8 @@ def upload_alignment_to_hf(
     private: bool = False,
     max_shard_size: str = "1GB",
     max_retries: int = 3,
+    test_size: float = 0.05,
+    seed: int = 42,
 ):
     """
     Upload alignment data as a TTS dataset to Hugging Face Hub.
@@ -220,8 +217,11 @@ def upload_alignment_to_hf(
         private: Whether the dataset should be private
         max_shard_size: Maximum shard size for upload (smaller = more reliable)
         max_retries: Number of retries on timeout errors
+        test_size: Fraction of data to use for the test split
+        seed: Random seed for the train/test split
     """
-    split_dataset = prepare_alignment_dataset(alignment_df)
+    dataset = prepare_alignment_dataset(alignment_df)
+    split_dataset = dataset.train_test_split(test_size=test_size, seed=seed)
 
     # Push to hub with retry logic for timeout errors
     for split_name in ["train", "test"]:
