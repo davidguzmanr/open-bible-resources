@@ -198,7 +198,7 @@ def prepare_alignment_dataset(
 
 
 def upload_alignment_to_hf(
-    alignment_df: pd.DataFrame,
+    dataset: Dataset,
     language: str,
     repo_id: str,
     private: bool = False,
@@ -208,11 +208,12 @@ def upload_alignment_to_hf(
     seed: int = 42,
 ):
     """
-    Upload alignment data as a TTS dataset to Hugging Face Hub.
+    Upload an alignment dataset to Hugging Face Hub.
 
     Args:
-        alignment_df: DataFrame with audio_file, text, and metadata columns
-        language: Language name to use as the split/config name
+        dataset: HF Dataset produced by prepare_alignment_dataset (optionally
+                 enriched with a speaker_id column via add_speaker_ids)
+        language: Language name to use as the config name
         repo_id: Hugging Face repository ID (e.g., "username/bible-tts")
         private: Whether the dataset should be private
         max_shard_size: Maximum shard size for upload (smaller = more reliable)
@@ -220,7 +221,6 @@ def upload_alignment_to_hf(
         test_size: Fraction of data to use for the test split
         seed: Random seed for the train/test split
     """
-    dataset = prepare_alignment_dataset(alignment_df)
     split_dataset = dataset.train_test_split(test_size=test_size, seed=seed)
 
     # Push to hub with retry logic for timeout errors
