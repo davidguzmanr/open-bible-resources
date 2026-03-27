@@ -12,47 +12,48 @@ from utils.hf_preprocessing import (
 from utils.diarization import add_speaker_ids
 
 LANGUAGES = [
-    'Apali',
-    'Arabic Standard',
-    'Assamese',
-    'Bengali',
-    'Central Kurdish',
-    'Chhattisgarhi',
-    'Chichewa',
-    'Dawro',
-    'Dholuo',
-    'Ewe',
-    'Gamo',
-    'Gofa',
-    'Gujarati',
-    'Haitian Creole',
-    'Hausa',
-    'Hiligaynon',
-    'Hindi',
-    'Igbo',
-    'Kannada',
-    'Kikuyu',
-    'Lingala',
-    'Luganda',
-    'Malayalam',
-    'Maori',
-    'Matengo',
-    'Marathi',
-    'Ndebele',
-    'Nepali',
-    'Oromo',
-    'Punjabi',
-    'Shona',
-    'Swahili',
-    'Tamil',
-    'Telugu',
-    'Turkish',
-    'Twi (Akuapem)',
-    'Twi (Asante)',
-    'Ukrainian',
-    'Urdu',
-    'Vietnamese',
-    'Yoruba',
+    # 'Apali',
+    # 'Arabic Standard',
+    # 'Assamese',
+    # 'Bengali',
+    # 'Central Kurdish',
+    # 'Chhattisgarhi',
+    # 'Chichewa',
+    # 'Dawro',
+    # 'Dholuo',
+    # 'Ewe',
+    # 'Gamo',
+    # 'Gofa',
+    # 'Gujarati',
+    # 'Haitian Creole',
+    # 'Hausa',
+    # 'Hiligaynon',
+    # 'Hindi',
+    # 'Igbo',
+    # 'Kannada',
+    # 'Kikuyu',
+    # 'Lingala',
+    # 'Luganda',
+    # 'Malayalam',
+    # 'Maori',
+    # 'Matengo',
+    # 'Marathi',
+    # 'Ndebele',
+    # 'Nepali',
+    # 'Oromo',
+    'Polish',
+    # 'Punjabi',
+    # 'Shona',
+    # 'Swahili',
+    # 'Tamil',
+    # 'Telugu',
+    # 'Turkish',
+    # 'Twi (Akuapem)',
+    # 'Twi (Asante)',
+    # 'Ukrainian',
+    # 'Urdu',
+    # 'Vietnamese',
+    # 'Yoruba',
 ]
 
 BASE_DIR = "data/audios"
@@ -60,13 +61,20 @@ REPO_ID = "davidguzmanr/open-bible-resources"
 PYANNOTE_TOKEN = os.environ.get("PYANNOTE_TOKEN", "")
 
 # Load diarization pipeline once (expensive operation)
-print("Loading pyannote diarization pipeline...")
-pipeline = Pipeline.from_pretrained(
-    "pyannote/speaker-diarization-precision-2",
-    token=PYANNOTE_TOKEN,
-)
-pipeline.to(torch.device("cuda" if torch.cuda.is_available() else "cpu"))
-print("Pipeline loaded.\n")
+pipeline = None
+if not PYANNOTE_TOKEN:
+    print("Warning: PYANNOTE_TOKEN is not set. Skipping diarization (step 3).\n")
+else:
+    try:
+        print("Loading pyannote diarization pipeline...")
+        pipeline = Pipeline.from_pretrained(
+            "pyannote/speaker-diarization-precision-2",
+            token=PYANNOTE_TOKEN,
+        )
+        pipeline.to(torch.device("cuda" if torch.cuda.is_available() else "cpu"))
+        print("Pipeline loaded.\n")
+    except Exception as e:
+        print(f"Warning: Failed to load pyannote pipeline ({e}). Skipping diarization (step 3).\n")
 
 for language in tqdm(LANGUAGES, desc="Uploading languages"):
     print(f"\n--- Processing '{language}' ---")
@@ -83,12 +91,13 @@ for language in tqdm(LANGUAGES, desc="Uploading languages"):
         # file, run pyannote diarization on it, and map each book to the
         # speaker that dominates its time window.  The result is the same
         # dataset with an extra `speaker_id` column.
-        ds = add_speaker_ids(
-            ds=ds,
-            pipeline=pipeline,
-            language=language,
-            output_dir="diarization",
-        )
+        if pipeline is not None:
+            ds = add_speaker_ids(
+                ds=ds,
+                pipeline=pipeline,
+                language=language,
+                output_dir="diarization",
+            )
 
         # Step 4: Split into train/test and push both splits to the Hub under
         # a config named after the language.

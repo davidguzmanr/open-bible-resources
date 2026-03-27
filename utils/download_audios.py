@@ -27,9 +27,18 @@ def extract_artifact_links(html_file_path: str) -> Dict[str, Dict[str, str]]:
     """
     Parse an HTML file and extract artifact download links with their sections.
 
-    Searches for anchor tags containing "artifactContent" in their href
-    attribute and maps the link text to the URL along with the section
-    (e.g., "Old Testament - wav", "New Testament - mp3") it belongs to.
+    Supports two HTML formats from the open.bible site:
+
+    - Old format: sections are ``<li>`` elements with an ``<a class="opener">``
+      heading and a ``<div class="slide">`` containing the artifact links.
+    - New format (Next.js SSR): sections are ``<div role="region">`` elements
+      whose previous sibling ``<h3>`` carries the section name; artifact links
+      are plain ``<a href="https://...artifactContent/...">`` tags inside a
+      ``<ul>`` list.
+
+    In both cases the function maps each book/resource name (link text) to its
+    download URL and enclosing section (e.g. "New Testament - mp3").
+    Word-document links are skipped in both formats.
 
     Args:
         html_file_path: Path to the HTML file containing artifact links.
@@ -44,29 +53,40 @@ def extract_artifact_links(html_file_path: str) -> Dict[str, Dict[str, str]]:
 
     result: Dict[str, Dict[str, str]] = {}
 
-    # Find all section containers (li elements with an "opener" link)
-    for section_li in soup.find_all("li"):
-        opener = section_li.find("a", class_="opener")
-        if not opener:
-            continue
+    if soup.find("a", class_="opener"):
+        # Old format: li > a.opener (section title) + div.slide (artifact links)
+        for section_li in soup.find_all("li"):
+            opener = section_li.find("a", class_="opener")
+            if not opener:
+                continue
 
-        # Extract section name from the opener link
-        section_name = opener.get_text(strip=True)
+            section_name = opener.get_text(strip=True)
 
-        # Find the slide div containing the artifact links
-        slide_div = section_li.find("div", class_="slide")
-        if not slide_div:
-            continue
+            slide_div = section_li.find("div", class_="slide")
+            if not slide_div:
+                continue
 
-        # Extract all artifact links within this section
-        for a in slide_div.find_all("a", href=True):
-            href = a["href"]
-            text = a.get_text(strip=True)
-            if "artifactContent" in href and text:
-                # Skip Word documents - we only need the audio files
-                if text == "Word":
-                    continue
-                result[text] = {"url": href, "section": section_name}
+            for a in slide_div.find_all("a", href=True):
+                href = a["href"]
+                text = a.get_text(strip=True)
+                if "artifactContent" in href and text:
+                    if text == "Word":
+                        continue
+                    result[text] = {"url": href, "section": section_name}
+    else:
+        # New format: div[role="region"] holds the book list; the preceding h3
+        # sibling contains the section name.
+        for region in soup.find_all("div", role="region"):
+            h3 = region.find_previous_sibling("h3")
+            section_name = h3.get_text(strip=True) if h3 else "Unknown"
+
+            for a in region.find_all("a", href=True):
+                href = a["href"]
+                text = a.get_text(strip=True)
+                if "artifactContent" in href and text:
+                    if text.upper() == "WORD":
+                        continue
+                    result[text] = {"url": href, "section": section_name}
 
     return result
 
