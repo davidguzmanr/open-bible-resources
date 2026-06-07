@@ -174,16 +174,24 @@ MAT_001_Verse_002.txt
 
 ## Supported Languages
 
-Languages with **timing files** (higher accuracy alignment):
-Assamese, Bengali, Central Kurdish, Chhattisgarhi, Dholuo, Ewe, Gujarati, Haryanvi, Hausa, Hiligaynon, Hindi, Igbo, Kannada, Lingala, Malayalam, Marathi, Ndebele, Oromo, Punjabi, Tamil, Telugu, Toma, Twi (Akuapem), Twi (Asante), Ukrainian, Urdu, Vietnamese, Yoruba
+Languages with **timing files** (28 languages, higher accuracy alignment):
+Assamese, Bengali, Central Kurdish, Chhattisgarhi, Dholuo, Ewe, Gamo, Gujarati, Hausa, Hiligaynon, Hindi, Igbo, Kannada, Lingala, Luganda, Malayalam, Marathi, Ndebele, Nepali, Oromo, Punjabi, Tamil, Telugu, Twi (Akuapem), Twi (Asante), Urdu, Vietnamese, Yoruba
 
-Languages using **forced alignment**:
-Apali, Arabic Standard, Chichewa, Dawro, Gamo, Gofa, Haitian Creole, Kikuyu, Luganda, Shona, Swahili, Turkish
+Languages using **forced alignment** (9 languages):
+Arabic Standard, Chichewa, Dawro, Gofa, Haitian Creole, Kikuyu, Shona, Swahili, Turkish
 
-## Notes
+## Speaker Diarization
 
-- **Chhattisgarhi**: Multiple audio formats were available; kept the one following standard naming convention.
-- **Toma**: Transcripts follow a non-standard format; may require additional preprocessing.
+Several languages contain recordings from more than one speaker. Speaker labels are assigned using [pyannote/speaker-diarization-precision-2](https://huggingface.co/pyannote/speaker-diarization-precision-2) before uploading to the Hub.
+
+To run diarization, set the `PYANNOTE_TOKEN` environment variable to a valid token with access to the pyannote model:
+
+```bash
+export PYANNOTE_TOKEN="..."
+python upload_to_hf.py
+```
+
+If the token is not set, diarization is skipped and `speaker_id` is not included.
 
 ## References
 

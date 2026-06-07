@@ -12,7 +12,6 @@ from utils.hf_preprocessing import (
 from utils.diarization import add_speaker_ids
 
 LANGUAGES = [
-    'Apali',
     'Arabic Standard',
     'Assamese',
     'Bengali',
@@ -35,13 +34,10 @@ LANGUAGES = [
     'Lingala',
     'Luganda',
     'Malayalam',
-    'Maori',
-    'Matengo',
     'Marathi',
     'Ndebele',
     'Nepali',
     'Oromo',
-    'Polish',
     'Punjabi',
     'Shona',
     'Swahili',
@@ -50,7 +46,6 @@ LANGUAGES = [
     'Turkish',
     'Twi (Akuapem)',
     'Twi (Asante)',
-    'Ukrainian',
     'Urdu',
     'Vietnamese',
     'Yoruba',
