@@ -139,6 +139,8 @@ print(df.groupby('language')['duration_seconds'].sum())
 
 Use the data checks module to identify outliers and validate TTS datasets:
 
+
+
 ```python
 from utils import data_checks
 
@@ -156,6 +158,19 @@ The checker validates and labels samples as:
 - `TOO_SHORT_TRANS`: Transcripts under 10 characters
 - `OFFENDING_DATA`: Pairs with more text than audio (bad for CTC)
 - `NON_NORMAL`: Pairs outside the specified standard deviations from mean ratio
+
+### 5. Speaker Diarization and Upload
+
+Several languages contain recordings from more than one speaker. Speaker labels are assigned using [pyannote/speaker-diarization-precision-2](https://huggingface.co/pyannote/speaker-diarization-precision-2) before uploading to the Hub. The first verse of every Bible book is concatenated into a 10–15 minute reference file, diarization is run on it, and the dominant speaker for each book is propagated to all its verses as a `speaker_id` metadata column.
+
+To run diarization and upload to Hugging Face, set the `PYANNOTE_TOKEN` environment variable to a valid token with access to the pyannote model:
+
+```bash
+export PYANNOTE_TOKEN="hf_..."
+python upload_to_hf.py
+```
+
+If the token is not set, diarization is skipped and `speaker_id` is not included.
 
 ## Output Format
 
@@ -179,19 +194,6 @@ Assamese, Bengali, Central Kurdish, Chhattisgarhi, Dholuo, Ewe, Gamo, Gujarati, 
 
 Languages using **forced alignment** (9 languages):
 Arabic Standard, Chichewa, Dawro, Gofa, Haitian Creole, Kikuyu, Shona, Swahili, Turkish
-
-## Speaker Diarization
-
-Several languages contain recordings from more than one speaker. Speaker labels are assigned using [pyannote/speaker-diarization-precision-2](https://huggingface.co/pyannote/speaker-diarization-precision-2) before uploading to the Hub.
-
-To run diarization, set the `PYANNOTE_TOKEN` environment variable to a valid token with access to the pyannote model:
-
-```bash
-export PYANNOTE_TOKEN="..."
-python upload_to_hf.py
-```
-
-If the token is not set, diarization is skipped and `speaker_id` is not included.
 
 ## References
 
