@@ -189,11 +189,68 @@ MAT_001_Verse_002.txt
 
 ## Supported Languages
 
-Languages with **timing files** (28 languages, higher accuracy alignment):
-Assamese, Bengali, Central Kurdish, Chhattisgarhi, Dholuo, Ewe, Gamo, Gujarati, Hausa, Hiligaynon, Hindi, Igbo, Kannada, Lingala, Luganda, Malayalam, Marathi, Ndebele, Nepali, Oromo, Punjabi, Tamil, Telugu, Twi (Akuapem), Twi (Asante), Urdu, Vietnamese, Yoruba
+Languages with **timing files** (26 languages):
+Assamese, Bengali, Central Kurdish, Chhattisgarhi, Dholuo, Ewe, Gujarati, Hausa, Hiligaynon, Hindi, Igbo, Kannada, Lingala, Malayalam, Marathi, Ndebele, Nepali, Oromo, Punjabi, Tamil, Telugu, Twi (Akuapem), Twi (Asante), Urdu, Vietnamese, Yoruba
 
-Languages using **forced alignment** (9 languages):
-Arabic Standard, Chichewa, Dawro, Gofa, Haitian Creole, Kikuyu, Shona, Swahili, Turkish
+Languages using **forced alignment** (11 languages):
+Arabic Standard, Chichewa, Dawro, Gamo, Gofa, Haitian Creole, Kikuyu, Luganda, Shona, Swahili, Turkish
+
+## Alignment Quality
+
+For the 26 languages that ship timing files, the forced aligner can be scored against
+those human-authored verse markers. The pilot below aligns a fixed set of 6 New
+Testament books (PHP, COL, 1TH, 2TI, 1PE, JUD — 490–501 verses per language, 23
+chapters) in the same configuration used in production (`--language und`), then
+compares each predicted verse boundary against the corresponding marker.
+
+Reproduce with `jobs/align_pilot_500_verses.sh`, then:
+
+```bash
+python utils/score_alignment_pilot.py \
+    --pilot-root openbibletts_alignment_pilot --repo-root .
+```
+
+| Language | n | med | mean | bias | gross% | fine | <100 | <250 | <500 | <1000 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Vietnamese | 500 | 40 | 710 | +91 | 14.0 | 30 | 81 | 84 | 84 | 86 |
+| Igbo | 501 | 59 | 353 | -255 | 8.0 | 58 | 90 | 92 | 92 | 92 |
+| Twi (Asante) | 501 | 59 | 179 | +8 | 3.2 | 59 | 94 | 96 | 96 | 97 |
+| Twi (Akuapem) | 500 | 62 | 543 | +308 | 6.2 | 61 | 87 | 93 | 93 | 94 |
+| Central Kurdish | 501 | 63 | 486 | -321 | 9.4 | 58 | 71 | 83 | 87 | 91 |
+| Ewe | 500 | 65 | 341 | -55 | 5.4 | 63 | 80 | 91 | 94 | 95 |
+| Hausa | 501 | 79 | 190 | -39 | 5.8 | 76 | 68 | 94 | 94 | 94 |
+| Hiligaynon | 494 | 109 | 1476 | +793 | 14.8 | 104 | 37 | 85 | 85 | 85 |
+| Yoruba | 501 | 114 | 415 | -213 | 10.6 | 108 | 36 | 84 | 85 | 89 |
+| Ndebele | 496 | 213 | 915 | +198 | 11.3 | 180 | 15 | 54 | 79 | 89 |
+| Lingala | 501 | 217 | 827 | -465 | 13.2 | 206 | 2 | 64 | 86 | 87 |
+| Tamil | 501 | 222 | 272 | +192 | 1.6 | 222 | 2 | 66 | 97 | 98 |
+| Kannada | 501 | 249 | 315 | +150 | 3.4 | 242 | 7 | 51 | 95 | 97 |
+| Marathi | 501 | 259 | 411 | +76 | 4.2 | 256 | 1 | 44 | 93 | 96 |
+| Bengali | 473 | 284 | 487 | +41 | 5.5 | 279 | 1 | 29 | 89 | 95 |
+| Assamese | 501 | 291 | 421 | +215 | 4.4 | 288 | 0 | 28 | 90 | 96 |
+| Dholuo | 501 | 298 | 509 | +40 | 6.2 | 292 | 1 | 23 | 93 | 94 |
+| Telugu | 412 | 307 | 1856 | -1405 | 19.2 | 262 | 2 | 37 | 78 | 81 |
+| Punjabi | 501 | 326 | 427 | +211 | 5.2 | 322 | 0 | 9 | 89 | 95 |
+| Hindi | 501 | 358 | 529 | +145 | 6.4 | 350 | 0 | 10 | 84 | 94 |
+| Urdu | 501 | 359 | 476 | +243 | 3.8 | 356 | 0 | 6 | 89 | 96 |
+| Oromo | 501 | 403 | 868 | -202 | 12.2 | 368 | 1 | 21 | 66 | 88 |
+| Gujarati | 501 | 432 | 608 | +166 | 8.4 | 421 | 0 | 3 | 73 | 92 |
+| Malayalam | 454 | 486 | 1624 | -922 | 15.9 | 449 | 0 | 4 | 52 | 84 |
+| Chhattisgarhi | 501 | 494 | 778 | -57 | 11.2 | 458 | 0 | 8 | 51 | 89 |
+| Nepali | 501 | 533 | 667 | +280 | 6.4 | 523 | 0 | 0 | 38 | 94 |
+| **Median of languages** | **12847** | **254** | **498** | **+58** | **6.4** | **249** | **2** | **47** | **88** | **94** |
+
+All values are milliseconds. For each verse, `Δ = predicted start − reference marker`:
+
+| Column | Meaning |
+|---|---|
+| `n` | Verse boundaries compared (the bottom row is the **total**, not a median) |
+| `med` / `mean` | Median and mean of \|Δ\| |
+| `bias` | Mean of **signed** Δ — positive means the aligner lands late, negative early |
+| `gross%` | Share of \|Δ\| > 1000 ms (catastrophic misalignments) |
+| `fine` | Median \|Δ\| excluding those gross cases |
+| `<100` … `<1000` | Share of \|Δ\| within that many ms |
+
 
 ## References
 

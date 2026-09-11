@@ -30,6 +30,8 @@ import argparse
 import os
 import re
 import subprocess
+import unicodedata
+import shutil
 import tempfile
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -38,6 +40,19 @@ import pandas as pd
 
 # Import the scripture parser from the same directory (handles both USX and USFM)
 from usx_parser import scripture_to_dataframe
+
+
+# Apostrophe-class characters that function as letters in some orthographies
+# (Hausa glottalisation, Lingala, several Indic transliterations) and must
+# survive text cleaning. ASCII ' is deliberately absent: the original cleaner
+# stripped it and the released corpus was aligned that way, so keeping that
+# behaviour avoids changing how already-processed languages are handled.
+ORTHOGRAPHIC_APOSTROPHES = frozenset(
+    "‘"  # ' LEFT SINGLE QUOTATION MARK
+    "’"  # ' RIGHT SINGLE QUOTATION MARK -- Hausa 'yan'uwa, sa'ad
+    "ʼ"  # MODIFIER LETTER APOSTROPHE (already category Lm; listed for clarity)
+    "＇"  # FULLWIDTH APOSTROPHE
+)
 
 
 def clean_text_for_alignment(text: str) -> str:
@@ -61,11 +76,45 @@ def clean_text_for_alignment(text: str) -> str:
     # Remove standalone numbers (whole words only, not part of other text)
     cleaned = re.sub(r'\b\d+\b', '', text)
     
-    # Remove punctuation marks that cause g2p issues
-    # This keeps all Unicode letters (\w matches [a-zA-Z0-9_] + Unicode letters)
-    # We remove common punctuation: : ; , . ! ? " ' « » ( ) [ ] { } - – — / \ etc.
-    # Using a character class to be explicit about what we remove
-    cleaned = re.sub(r'[:\;\,\.\!\?\"\'\«\»\(\)\[\]\{\}\-\–\—\/\\<>@#$%^&*+=|~`]', '', cleaned)
+    # Remove punctuation and symbols that cause g2p issues.
+    #
+    # An explicit ASCII character class is not enough: scripture text in these
+    # languages carries script-specific punctuation the g2p back-end cannot map,
+    # and at least one of those characters is not punctuation at all as far as
+    # Unicode is concerned. Assamese uses '৷' (BENGALI CURRENCY NUMERATOR
+    # FOUR) as a danda; its category is No (Number, other), so it slips past both
+    # an ASCII list and any category-P filter, and aborts the whole chapter with
+    #   RuntimeError("Some words could not be g2p'd correctly. Aborting.")
+    # Every one of the 26 languages also carries curly quotes, and the Indic and
+    # Arabic-script ones carry U+0964 danda, U+060C Arabic comma, or U+FD3E/FD3F
+    # ornate parentheses.
+    #
+    # So filter by Unicode category instead, dropping punctuation (P*), symbols
+    # (S*) and "other numbers" (No), while deliberately KEEPING:
+    #   L* letters, M* combining marks (tone diacritics, Indic vowel signs),
+    #   Cf format characters (ZWJ/ZWNJ, meaningful in Indic conjuncts), and the
+    #   apostrophes in ORTHOGRAPHIC_APOSTROPHES below.
+    #
+    # The apostrophe exemption matters: a category filter alone would strip
+    # U+2019, but Hausa uses it as a LETTER marking glottalisation, not as a
+    # quotation mark -- 'yan'uwa, sa'ad, addu'a, al'ummai, qa'idodin. In
+    # Colossians alone, 34 of 39 occurrences are word-internal. Removing it
+    # rewrites sa'ad as saad, which is the same class of damage as stripping
+    # tone marks. Lingala and several Indic languages use it similarly.
+    #
+    # These are kept unconditionally rather than only when word-internal
+    # (Hausa 'yan is also word-initial, so a between-letters rule would still
+    # corrupt it). Leaving a stray quotation mark in is harmless: readalongs
+    # tokenises it away before g2p, which is why re-running the full pilot with
+    # and without punctuation stripping produced identical boundaries for 25 of
+    # 26 languages. Only a token consisting SOLELY of an unmappable character
+    # ever aborted alignment, which is the Assamese U+09F7 case above.
+    cleaned = ''.join(
+        ch for ch in cleaned
+        if ch in ORTHOGRAPHIC_APOSTROPHES
+        or (unicodedata.category(ch)[0] not in ('P', 'S')
+            and unicodedata.category(ch) != 'No')
+    )
     
     # Clean up multiple spaces left behind
     cleaned = re.sub(r'  +', ' ', cleaned)
@@ -197,6 +246,15 @@ def run_readalongs_alignment(
             output_formats=["textgrid"],  # TextGrid gives us word timings
             save_temps=save_temps,
             force_overwrite=True,
+            # readalongs.api.align seeds its arguments from the click command's
+            # defaults and calls cli.align.callback() directly, bypassing click's
+            # own parameter processing. Any option we do not override therefore
+            # arrives as the raw Sentinel.UNSET default. For `config` that means
+            # the callback tries to open the literal string "Sentinel.UNSET" as a
+            # file and dies with:
+            #   BadParameter("Config file 'Sentinel.UNSET' must be in JSON format")
+            # Passing config=None explicitly is what click would have produced.
+            config=None,
         )
         
         if status == 0:
@@ -548,6 +606,23 @@ def process_book(
                 continue
             
             textgrid_path = str(textgrid_files[0])
+
+            # Everything above happens inside a tempfile.TemporaryDirectory that
+            # is destroyed on exit, and readalongs' own --save-temps files land
+            # inside it too, so nothing survives by default. Copy the TextGrid
+            # out when save_temps is requested: it holds the word and verse
+            # boundaries needed to score alignment against reference timings.
+            # Gated on save_temps so default runs behave exactly as before.
+            if save_temps:
+                try:
+                    os.makedirs(output_folder, exist_ok=True)
+                    shutil.copy2(
+                        textgrid_path,
+                        os.path.join(output_folder, f"{book_code}_{chapter:03d}.TextGrid"),
+                    )
+                except OSError as e:
+                    print(f"    Warning: could not save TextGrid for chapter {chapter}: {e}")
+
             sentences = parse_textgrid_for_sentences(textgrid_path)
             
             if not sentences:
