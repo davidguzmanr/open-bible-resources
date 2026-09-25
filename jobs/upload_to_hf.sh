@@ -20,9 +20,16 @@ module load miniconda/3
 module load gcc/9.3.0
 
 export HF_HOME=$SCRATCH/huggingface
-export PYANNOTE_TOKEN=sk_537e76a644b74ed8b8e1d3a4a560f37e
 export WANDB_MODE=disabled
 export PYTHONUNBUFFERED=1
+
+# PYANNOTE_TOKEN must come from the submitting shell (sbatch exports it by
+# default): export PYANNOTE_TOKEN="..." && sbatch upload_to_hf.sh
+# Without it upload_to_hf.py silently skips diarization and drops speaker_id.
+if [[ -z "${PYANNOTE_TOKEN:-}" ]]; then
+  echo "ERROR: PYANNOTE_TOKEN is not set. Export it before submitting." >&2
+  exit 1
+fi
 
 conda activate ReadAlongs
 
