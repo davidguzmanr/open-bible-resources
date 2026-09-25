@@ -209,7 +209,13 @@ __marimo__/
 
 data/
 logs/
-jobs/
+
+# Track the Slurm scripts in jobs/, but not the logs or job output they
+# produce. Ignoring "jobs/" outright would stop git descending into the
+# directory at all, so the negation would never be evaluated -- exclude the
+# contents and re-include the scripts instead.
+jobs/*
+!jobs/*.sh
 open-bible-scripts/
 data-checker/
 Studio/
@@ -219,6 +225,7 @@ Apali/
 Turkish/
 diarization
 openbibletts_alignment_pilot/
+openbibletts_alignment_full/
 
 # dev-single-language.ipynb
 EMNLP_2026___Open_Bible/

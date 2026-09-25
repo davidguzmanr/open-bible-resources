@@ -30,6 +30,10 @@ import statistics as st
 import sys
 from pathlib import Path
 
+# Book codes that differ between a language's USX files and its audio/timing
+# files. Punjabi is the only case across all 26 languages and 66 books.
+BOOK_CODE_ALIASES = {"OBA": ("OBD",)}
+
 GROSS_MS = 1000.0
 TOLERANCES_MS = (100, 250, 500, 1000)
 
@@ -131,6 +135,14 @@ def main():
         ref_index = {f.stem: f for f in bundle.rglob("*.txt")} if bundle.is_dir() else {}
         for tg in sorted((pilot / lang).rglob("*.TextGrid")):
             ref = ref_index.get(tg.stem)
+            if ref is None:
+                # Punjabi names Obadiah's timing files OBD_* while its USX (and
+                # therefore the TextGrid) uses OBA. Retry under known aliases.
+                book, _, chap = tg.stem.partition("_")
+                for alias in BOOK_CODE_ALIASES.get(book, ()):
+                    ref = ref_index.get(f"{alias}_{chap}")
+                    if ref is not None:
+                        break
             if ref is None:
                 skipped.append(f"{tg.stem}: no reference file")
                 continue
