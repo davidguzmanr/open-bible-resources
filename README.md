@@ -198,59 +198,67 @@ Arabic Standard, Chichewa, Dawro, Gamo, Gofa, Haitian Creole, Kikuyu, Luganda, S
 ## Alignment Quality
 
 For the 26 languages that ship timing files, the forced aligner can be scored against
-those human-authored verse markers. The pilot below aligns a fixed set of 6 New
-Testament books (PHP, COL, 1TH, 2TI, 1PE, JUD — 490–501 verses per language, 23
-chapters) in the same configuration used in production (`--language und`), then
-compares each predicted verse boundary against the corresponding marker.
-
-Reproduce with `jobs/align_pilot_500_verses.sh`, then:
+those human-authored verse markers. `jobs/align_full_timing_languages.sh` aligns
+**every chapter of all 66 books** per language in the production configuration
+(`--language und`), then compares each predicted verse boundary against its marker:
 
 ```bash
+cd jobs && sbatch align_full_timing_languages.sh   # ~18 h, scores on completion
+# or score an existing run:
 python utils/score_alignment_pilot.py \
-    --pilot-root openbibletts_alignment_pilot --repo-root .
+    --pilot-root openbibletts_alignment_full --repo-root .
 ```
 
-| Language | n | med | mean | bias | gross% | fine | <100 | <250 | <500 | <1000 |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| Vietnamese | 500 | 40 | 710 | +91 | 14.0 | 30 | 81 | 84 | 84 | 86 |
-| Igbo | 501 | 59 | 353 | -255 | 8.0 | 58 | 90 | 92 | 92 | 92 |
-| Twi (Asante) | 501 | 59 | 179 | +8 | 3.2 | 59 | 94 | 96 | 96 | 97 |
-| Twi (Akuapem) | 500 | 62 | 543 | +308 | 6.2 | 61 | 87 | 93 | 93 | 94 |
-| Central Kurdish | 501 | 63 | 486 | -321 | 9.4 | 58 | 71 | 83 | 87 | 91 |
-| Ewe | 500 | 65 | 341 | -55 | 5.4 | 63 | 80 | 91 | 94 | 95 |
-| Hausa | 501 | 79 | 190 | -39 | 5.8 | 76 | 68 | 94 | 94 | 94 |
-| Hiligaynon | 494 | 109 | 1476 | +793 | 14.8 | 104 | 37 | 85 | 85 | 85 |
-| Yoruba | 501 | 114 | 415 | -213 | 10.6 | 108 | 36 | 84 | 85 | 89 |
-| Ndebele | 496 | 213 | 915 | +198 | 11.3 | 180 | 15 | 54 | 79 | 89 |
-| Lingala | 501 | 217 | 827 | -465 | 13.2 | 206 | 2 | 64 | 86 | 87 |
-| Tamil | 501 | 222 | 272 | +192 | 1.6 | 222 | 2 | 66 | 97 | 98 |
-| Kannada | 501 | 249 | 315 | +150 | 3.4 | 242 | 7 | 51 | 95 | 97 |
-| Marathi | 501 | 259 | 411 | +76 | 4.2 | 256 | 1 | 44 | 93 | 96 |
-| Bengali | 473 | 284 | 487 | +41 | 5.5 | 279 | 1 | 29 | 89 | 95 |
-| Assamese | 501 | 291 | 421 | +215 | 4.4 | 288 | 0 | 28 | 90 | 96 |
-| Dholuo | 501 | 298 | 509 | +40 | 6.2 | 292 | 1 | 23 | 93 | 94 |
-| Telugu | 412 | 307 | 1856 | -1405 | 19.2 | 262 | 2 | 37 | 78 | 81 |
-| Punjabi | 501 | 326 | 427 | +211 | 5.2 | 322 | 0 | 9 | 89 | 95 |
-| Hindi | 501 | 358 | 529 | +145 | 6.4 | 350 | 0 | 10 | 84 | 94 |
-| Urdu | 501 | 359 | 476 | +243 | 3.8 | 356 | 0 | 6 | 89 | 96 |
-| Oromo | 501 | 403 | 868 | -202 | 12.2 | 368 | 1 | 21 | 66 | 88 |
-| Gujarati | 501 | 432 | 608 | +166 | 8.4 | 421 | 0 | 3 | 73 | 92 |
-| Malayalam | 454 | 486 | 1624 | -922 | 15.9 | 449 | 0 | 4 | 52 | 84 |
-| Chhattisgarhi | 501 | 494 | 778 | -57 | 11.2 | 458 | 0 | 8 | 51 | 89 |
-| Nepali | 501 | 533 | 667 | +280 | 6.4 | 523 | 0 | 0 | 38 | 94 |
-| **Median of languages** | **12847** | **254** | **498** | **+58** | **6.4** | **249** | **2** | **47** | **88** | **94** |
+**803,158 verse boundaries.** All values in milliseconds, `Δ = predicted − reference`:
+`med`/`mean` are median and mean of |Δ|; `bias` is the mean *signed* Δ (positive =
+aligner lands late); `gross%` is the share beyond 1000 ms; `fine` is the median of the
+rest; `<N` is the share within N ms. `n` totals in the bottom row, the rest are medians.
 
-All values are milliseconds. For each verse, `Δ = predicted start − reference marker`:
+| Language | Script | n | med | mean | bias | gross% | fine | <100 | <250 | <500 | <1000 |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| Central Kurdish | Arabic | 31064 | 53 | 701 | +147 | 9.8 | 47 | 75 | 84 | 87 | 90 |
+| Twi (Asante) | Latin | 31053 | 58 | 452 | +260 | 6.2 | 57 | 88 | 92 | 93 | 94 |
+| Twi (Akuapem) | Latin | 30713 | 59 | 480 | +290 | 7.0 | 58 | 87 | 91 | 92 | 93 |
+| Igbo | Latin | 31060 | 59 | 470 | +23 | 6.7 | 58 | 87 | 93 | 93 | 93 |
+| Vietnamese | Latin | 30981 | 60 | 610 | -88 | 10.6 | 50 | 76 | 87 | 88 | 89 |
+| Ewe | Latin | 30740 | 67 | 991 | +669 | 8.1 | 65 | 72 | 88 | 91 | 92 |
+| Hausa | Latin | 31081 | 102 | 404 | -98 | 5.7 | 99 | 48 | 93 | 94 | 94 |
+| Yoruba | Latin | 31046 | 130 | 513 | +41 | 7.9 | 126 | 20 | 87 | 90 | 92 |
+| Hiligaynon | Latin | 29844 | 155 | 3485 | +2449 | 22.5 | 137 | 11 | 71 | 77 | 78 |
+| Lingala | Latin | 31159 | 166 | 650 | -139 | 9.1 | 156 | 15 | 78 | 90 | 91 |
+| Ndebele | Latin | 30854 | 250 | 1816 | +1199 | 15.2 | 220 | 6 | 51 | 79 | 85 |
+| Kannada | Kannada | 30955 | 265 | 518 | +167 | 4.6 | 260 | 4 | 44 | 94 | 95 |
+| Marathi | Devanagari | 31012 | 266 | 490 | +101 | 5.0 | 261 | 1 | 41 | 92 | 95 |
+| Tamil | Tamil | 31100 | 285 | 442 | +264 | 3.2 | 282 | 1 | 32 | 94 | 97 |
+| Urdu | Arabic | 31031 | 320 | 593 | +376 | 4.3 | 315 | 0 | 18 | 91 | 96 |
+| Telugu | Telugu | 29841 | 341 | 827 | +51 | 7.3 | 329 | 1 | 23 | 80 | 93 |
+| Dholuo | Latin | 30985 | 345 | 865 | +507 | 7.1 | 335 | 0 | 12 | 80 | 93 |
+| Punjabi | Gurmukhi | 31079 | 369 | 468 | +278 | 3.7 | 366 | 0 | 4 | 87 | 96 |
+| Bengali | Bengali | 31063 | 374 | 721 | +260 | 6.3 | 361 | 0 | 18 | 79 | 94 |
+| Malayalam | Malayalam | 30289 | 399 | 1163 | -113 | 11.0 | 373 | 4 | 21 | 68 | 89 |
+| Oromo | Latin | 31070 | 410 | 1002 | +184 | 9.1 | 390 | 0 | 14 | 66 | 91 |
+| Gujarati | Gujarati | 31087 | 415 | 1230 | -268 | 7.8 | 405 | 0 | 4 | 75 | 92 |
+| Hindi | Devanagari | 31104 | 430 | 836 | +67 | 6.3 | 421 | 0 | 5 | 74 | 94 |
+| Assamese | Bengali | 31012 | 443 | 672 | +249 | 5.3 | 438 | 0 | 3 | 77 | 95 |
+| Nepali | Devanagari | 30898 | 556 | 732 | +261 | 5.7 | 548 | 0 | 1 | 29 | 94 |
+| Chhattisgarhi | Devanagari | 31037 | 560 | 1851 | +1123 | 13.4 | 529 | 0 | 3 | 37 | 87 |
+| **Median of languages** | | **803158** | **275** | **686** | **+216** | **7.1** | **272** | **3** | **36** | **87** | **93** |
 
-| Column | Meaning |
-|---|---|
-| `n` | Verse boundaries compared (the bottom row is the **total**, not a median) |
-| `med` / `mean` | Median and mean of \|Δ\| |
-| `bias` | Mean of **signed** Δ — positive means the aligner lands late, negative early |
-| `gross%` | Share of \|Δ\| > 1000 ms (catastrophic misalignments) |
-| `fine` | Median \|Δ\| excluding those gross cases |
-| `<100` … `<1000` | Share of \|Δ\| within that many ms |
+Notes:
 
+- Agreement splits along **script**: Latin 116 ms median, Arabic 186 ms, Indic 386 ms.
+  Source audio is a uniform 48 kHz mono, so bandwidth does not explain it — the `und`
+  g2p fallback estimates Brahmic grapheme-to-phone timing poorly. Indic is looser but
+  has *fewer* gross failures (6.0% vs 8.0%).
+- Hiligaynon, Ndebele and Chhattisgarhi show a large positive bias with a high gross
+  rate — cumulative drift within chapters. Treat them separately rather than pooling.
+- The markers are production artefacts for audio-Bible navigation, not phonetic
+  annotation, so this measures **agreement between two segmentations**, not accuracy.
+  Tolerances are looser than the 10–25 ms used for phone alignment because verse
+  boundaries sit inside inter-verse pauses.
+- 7 chapters of ~30,900 (0.023%) failed with `"only noise or silence segments"`. Four
+  are the longest chapter in their book (incl. Psalm 119, 176 verses), so this is an
+  aligner capacity limit above roughly 60 verses per utterance, not a memory problem.
 
 ## References
 

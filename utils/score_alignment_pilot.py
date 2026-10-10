@@ -30,6 +30,23 @@ import statistics as st
 import sys
 from pathlib import Path
 
+# Writing system per language, following Table 1 of the paper. Reported as a
+# table column because alignment agreement splits sharply along script lines:
+# the `und` g2p fallback estimates grapheme-to-phone timing far better for
+# Latin orthography than for Brahmic scripts.
+LANGUAGE_SCRIPT = {
+    "Assamese": "Bengali", "Bengali": "Bengali", "Central Kurdish": "Arabic",
+    "Chhattisgarhi": "Devanagari", "Dholuo": "Latin", "Ewe": "Latin",
+    "Gujarati": "Gujarati", "Hausa": "Latin", "Hiligaynon": "Latin",
+    "Hindi": "Devanagari", "Igbo": "Latin", "Kannada": "Kannada",
+    "Lingala": "Latin", "Malayalam": "Malayalam", "Marathi": "Devanagari",
+    "Ndebele": "Latin", "Nepali": "Devanagari", "Oromo": "Latin",
+    "Punjabi": "Gurmukhi", "Tamil": "Tamil", "Telugu": "Telugu",
+    "Twi (Akuapem)": "Latin", "Twi (Asante)": "Latin", "Urdu": "Arabic",
+    "Vietnamese": "Latin", "Yoruba": "Latin",
+}
+
+
 # Book codes that differ between a language's USX files and its audio/timing
 # files. Punjabi is the only case across all 26 languages and 66 books.
 BOOK_CODE_ALIASES = {"OBA": ("OBD",)}
@@ -158,20 +175,21 @@ def main():
         if skipped:
             notes[lang] = skipped
 
-    hdr = (f"{'Language':<18}{'n':>6}{'med':>8}{'mean':>8}{'bias':>8}"
+    hdr = (f"{'Language':<18}{'Script':<12}{'n':>8}{'med':>8}{'mean':>8}{'bias':>8}"
            f"{'gross%':>8}{'fine':>7}" + "".join(f"{'<'+str(t):>7}" for t in TOLERANCES_MS))
     print(hdr)
     print("-" * len(hdr))
     for lang in sorted(rows, key=lambda L: rows[L]["median"]):
         r = rows[lang]
-        print(f"{lang:<18}{r['n']:>6}{r['median']:>8.0f}{r['mean']:>8.0f}{r['bias']:>+8.0f}"
+        print(f"{lang:<18}{LANGUAGE_SCRIPT.get(lang,'?'):<12}"
+              f"{r['n']:>8}{r['median']:>8.0f}{r['mean']:>8.0f}{r['bias']:>+8.0f}"
               f"{r['gross_pct']:>8.1f}{r['fine_median']:>7.0f}"
               + "".join(f"{r['within_'+str(t)]:>7.0f}" for t in TOLERANCES_MS))
 
     if rows:
         allv = [rows[L] for L in rows]
         print("-" * len(hdr))
-        print(f"{'MEDIAN OF LANGS':<18}{sum(r['n'] for r in allv):>6}"
+        print(f"{'MEDIAN OF LANGS':<18}{'':<12}{sum(r['n'] for r in allv):>8}"
               f"{st.median([r['median'] for r in allv]):>8.0f}"
               f"{st.median([r['mean'] for r in allv]):>8.0f}"
               f"{st.median([r['bias'] for r in allv]):>+8.0f}"

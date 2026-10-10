@@ -3,7 +3,7 @@
 #SBATCH --partition=long-cpu
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=16
-#SBATCH --mem=32G
+#SBATCH --mem=128G
 #SBATCH --time=48:00:00
 #SBATCH --output=logs/%x-%j.out
 #SBATCH --mail-type=ALL
@@ -50,6 +50,7 @@
 #   LANGUAGES="A,B"        restrict to a comma-separated subset
 #   BOOKS="PSA,GEN"        restrict to specific book codes
 #   KEEP_AUDIO=1           keep the re-cut verse WAV/TXT (needs ~300 GB)
+#   PER_BOOK_TIMEOUT=90m   per-book wall-clock cap (default 4h)
 #   JOBS=8                 worker-pool size (default: --cpus-per-task)
 #   OUT_ROOT=/some/path    output location
 # ---------------------------------------------------------------------------
@@ -72,6 +73,24 @@ OUT_ROOT="${OUT_ROOT:-$REPO/openbibletts_alignment_full}"
 DRY_RUN="${DRY_RUN:-0}"
 KEEP_AUDIO="${KEEP_AUDIO:-0}"
 JOBS="${JOBS:-${SLURM_CPUS_PER_TASK:-8}}"
+
+# MEMORY: the first full run requested 32 GB for 16 workers and died with
+# MaxRSS 31.4 GB. Three books were OOM-killed, each on the LONGEST CHAPTER of
+# its book (Psalm 119 at 176 verses, Ezekiel 16 at 63, Jeremiah 50-52 at up to
+# 64). SoundSwallower exhausts an internal block array on very long utterances
+# and then loops emitting
+#     ERROR: "blkarray_list.c": Block array (NxN) exhausted
+# while allocating -- 41.6 million times for one book, whose align.log reached
+# 2.8 GB. The cgroup limit is on the TOTAL of all workers, so with ~2 GB of
+# baseline per worker there was no headroom for even one spike. 128 GB leaves
+# ~100 GB of slack for simultaneous spikes without changing the CPU count, and
+# the retry job confirmed the diagnosis: 96 GB peaked at 34 GB and recovered
+# every OOM-killed book.
+#
+# PER_BOOK_TIMEOUT bounds the runaway case: if the block-array loop is
+# unbounded, more memory only delays it, so a book that exceeds the cap is
+# killed and marked "timeout" rather than burning the job's walltime.
+PER_BOOK_TIMEOUT="${PER_BOOK_TIMEOUT:-4h}"
 
 # Production forced-alignment settings -- keep in sync with
 # jobs/align_with_forced_alignment.sh or the validation stops being comparable.
@@ -158,6 +177,7 @@ echo "Languages : ${#LANGS[@]}"
 echo "Output    : $OUT_ROOT"
 echo "G2P       : $G2P_LANG    Chapter intro: '$CHAPTER_INTRO'"
 echo "Workers   : $JOBS    Keep audio: $KEEP_AUDIO    Dry run: $DRY_RUN"
+echo "Per-book cap : $PER_BOOK_TIMEOUT    Memory: ${SLURM_MEM_PER_NODE:-?} MB"
 echo "=========================================================="
 
 declare -a W_LANG=() W_CODE=() W_AUDIO=() W_USX=() W_OUT=()
@@ -220,8 +240,12 @@ for i in "${!W_LANG[@]}"; do
   while (( $(jobs -rp | wc -l) >= JOBS )); do wait -n 2>/dev/null || break; done
   (
     book_out="${W_OUT[$i]}"
+    # Clear any previous attempt: stale TextGrids from a partial run would be
+    # indistinguishable from this run's output, and a previous align.log can be
+    # multi-GB after a block-array runaway.
+    rm -rf "$book_out"
     mkdir -p "$book_out"
-    if python utils/force_align_book.py \
+    if timeout "$PER_BOOK_TIMEOUT" python utils/force_align_book.py \
           --audio_folder "${W_AUDIO[$i]}" \
           --book_usx "${W_USX[$i]}" \
           --output "$book_out" \
@@ -230,7 +254,12 @@ for i in "${!W_LANG[@]}"; do
           --save-temps > "$book_out/align.log" 2>&1; then
       echo ok > "$book_out/.status"
     else
-      echo failed > "$book_out/.status"
+      rc=$?
+      if (( rc == 124 )); then
+        echo "timeout" > "$book_out/.status"
+      else
+        echo failed > "$book_out/.status"
+      fi
     fi
     # Drop the re-cut verse audio as soon as the book is done: the scorer reads
     # only TextGrids, and at full-corpus scale this is the difference between
@@ -253,7 +282,7 @@ for i in "${!W_LANG[@]}"; do
   if [[ "$status" != "ok" ]]; then
     fail=1
     LANG_FAILED[$lang]=$(( ${LANG_FAILED[$lang]:-0} + 1 ))
-    echo "[$lang/$code] FAILED - see $book_out/align.log"
+    echo "[$lang/$code] ${status^^} - see $book_out/align.log"
   fi
   n=$(grep -hoE 'Extracted [0-9]+ verse' "$book_out/align.log" 2>/dev/null | awk '{s+=$2} END{print s+0}')
   LANG_VERSES[$lang]=$(( ${LANG_VERSES[$lang]:-0} + n ))
