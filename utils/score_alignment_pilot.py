@@ -57,26 +57,40 @@ TOLERANCES_MS = (100, 250, 500, 1000)
 # Marker files vary: most use "Verse 1", Hiligaynon uses lowercase zero-padded
 # "verse 01". Times use either a comma or a period as the decimal separator.
 VERSE_RE = re.compile(r"^verse\s+(\d+)\s+(\d+):(\d+):(\d+)[,.](\d+)", re.IGNORECASE)
+# Some languages also carry a chapter-final "End" marker; most do not.
+END_RE = re.compile(r"^End\s+(\d+):(\d+):(\d+)[,.](\d+)", re.IGNORECASE)
 INTERVAL_RE = re.compile(
     r'intervals\s*\[\d+\]:\s*xmin\s*=\s*([\d.]+)\s*xmax\s*=\s*([\d.]+)\s*text\s*=\s*"([^"]*)"'
 )
 
 
 def read_reference(path):
-    """Verse number -> start time in seconds, from a timing marker file."""
-    marks = {}
+    """(verse number -> start time, chapter end time or None), in seconds.
+
+    The marker files timestamp verse ONSETS only, so a verse's reference end is
+    the next verse's onset. A chapter-final "End" marker closes the last verse
+    where present; most languages omit it, in which case the last verse has no
+    reference end and is excluded from the end-side statistics.
+    """
+    marks, chapter_end = {}, None
     with open(path, encoding="utf-8", errors="replace") as fh:
         for line in fh:
-            m = VERSE_RE.match(line.strip())
+            line = line.strip()
+            m = VERSE_RE.match(line)
             if m:
                 v = int(m.group(1))
                 h, mi, s = int(m.group(2)), int(m.group(3)), int(m.group(4))
                 marks[v] = h * 3600 + mi * 60 + s + float("0." + m.group(5))
-    return marks
+                continue
+            m = END_RE.match(line)
+            if m:
+                h, mi, s = int(m.group(1)), int(m.group(2)), int(m.group(3))
+                chapter_end = h * 3600 + mi * 60 + s + float("0." + m.group(4))
+    return marks, chapter_end
 
 
 def read_textgrid_sentences(path):
-    """Start times of non-empty intervals on the Sentence tier."""
+    """(start, end) of each non-empty interval on the Sentence tier."""
     text = Path(path).read_text(encoding="utf-8", errors="replace")
     start = text.find('name = "Sentence"')
     if start < 0:
@@ -84,20 +98,33 @@ def read_textgrid_sentences(path):
     end = text.find('name = "Word"', start)
     block = text[start : end if end > start else len(text)]
     return [
-        float(xmin)
-        for xmin, _xmax, label in INTERVAL_RE.findall(block)
+        (float(xmin), float(xmax))
+        for xmin, xmax, label in INTERVAL_RE.findall(block)
         if label.strip()
     ]
 
 
 def score_chapter(tg_path, ref_path):
-    """Return (deltas_ms, note). deltas are predicted - reference."""
-    ref = read_reference(ref_path)
+    """Return (start_deltas_ms, overruns, note).
+
+    start_deltas are (predicted onset - reference onset) in ms. `overruns` is one
+    bool per verse that HAS a reference end, True when the predicted clip extends
+    past the next verse's onset marker -- i.e. the clip carries audio belonging to
+    the following verse.
+
+    Only the onset is scored as a signed error. The predicted END cannot be: the
+    aligner marks where speech stops, whereas the reference marks the next verse's
+    onset, which lies after the inter-verse pause, so |predicted end - reference
+    end| is dominated by pause length rather than alignment error. Overrun is the
+    end-side quantity the markers can actually adjudicate; end truncation cannot
+    be measured from onset markers at all and needs an energy-based check.
+    """
+    ref, chapter_end = read_reference(ref_path)
     if not ref:
-        return [], "no reference markers"
+        return [], [], "no reference markers"
     sentences = read_textgrid_sentences(tg_path)
     if not sentences:
-        return [], "no sentences in TextGrid"
+        return [], [], "no sentences in TextGrid"
 
     verses = sorted(ref)
     n = len(verses)
@@ -110,12 +137,18 @@ def score_chapter(tg_path, ref_path):
     elif len(sentences) > n:
         predicted = sentences[len(sentences) - n :]
     else:
-        return [], f"count mismatch (ref={n}, tg={len(sentences)})"
+        return [], [], f"count mismatch (ref={n}, tg={len(sentences)})"
 
-    return [(p - ref[v]) * 1000.0 for p, v in zip(predicted, verses)], ""
+    deltas = [(p[0] - ref[v]) * 1000.0 for p, v in zip(predicted, verses)]
+    overruns = []
+    for k in range(n):
+        ref_end = ref[verses[k + 1]] if k + 1 < n else chapter_end
+        if ref_end is not None:
+            overruns.append(predicted[k][1] > ref_end)
+    return deltas, overruns, ""
 
 
-def summarize(deltas):
+def summarize(deltas, overruns=()):
     a = [abs(d) for d in deltas]
     gross = [d for d in a if d > GROSS_MS]
     fine = [d for d in a if d <= GROSS_MS]
@@ -126,6 +159,8 @@ def summarize(deltas):
         "bias": st.mean(deltas) if deltas else float("nan"),
         "gross_pct": 100.0 * len(gross) / len(a) if a else float("nan"),
         "fine_median": st.median(fine) if fine else float("nan"),
+        "overrun_pct": (100.0 * sum(overruns) / len(overruns)) if overruns else float("nan"),
+        "n_end": len(overruns),
     }
     for t in TOLERANCES_MS:
         row[f"within_{t}"] = 100.0 * sum(x <= t for x in a) / len(a) if a else float("nan")
@@ -145,7 +180,7 @@ def main():
 
     rows, per_chapter, notes = {}, [], {}
     for lang in languages:
-        deltas, skipped = [], []
+        deltas, overruns, skipped = [], [], []
         # Most languages keep marker files flat in the bundle; Nepali nests them
         # under release/timingfiles/timingfiles/<CODE>/. Index by filename.
         bundle = repo / "data/audios" / lang / "Timing Files"
@@ -163,27 +198,28 @@ def main():
             if ref is None:
                 skipped.append(f"{tg.stem}: no reference file")
                 continue
-            d, note = score_chapter(tg, ref)
+            d, ov, note = score_chapter(tg, ref)
             if note:
                 skipped.append(f"{tg.stem}: {note}")
                 continue
             deltas.extend(d)
-            s = summarize(d)
+            overruns.extend(ov)
+            s = summarize(d, ov)
             per_chapter.append((lang, tg.stem, s["n"], s["median"], s["bias"], s["gross_pct"]))
         if deltas:
-            rows[lang] = summarize(deltas)
+            rows[lang] = summarize(deltas, overruns)
         if skipped:
             notes[lang] = skipped
 
     hdr = (f"{'Language':<18}{'Script':<12}{'n':>8}{'med':>8}{'mean':>8}{'bias':>8}"
-           f"{'gross%':>8}{'fine':>7}" + "".join(f"{'<'+str(t):>7}" for t in TOLERANCES_MS))
+           f"{'gross%':>8}{'over%':>7}{'fine':>7}" + "".join(f"{'<'+str(t):>7}" for t in TOLERANCES_MS))
     print(hdr)
     print("-" * len(hdr))
     for lang in sorted(rows, key=lambda L: rows[L]["median"]):
         r = rows[lang]
         print(f"{lang:<18}{LANGUAGE_SCRIPT.get(lang,'?'):<12}"
               f"{r['n']:>8}{r['median']:>8.0f}{r['mean']:>8.0f}{r['bias']:>+8.0f}"
-              f"{r['gross_pct']:>8.1f}{r['fine_median']:>7.0f}"
+              f"{r['gross_pct']:>8.1f}{r['overrun_pct']:>7.1f}{r['fine_median']:>7.0f}"
               + "".join(f"{r['within_'+str(t)]:>7.0f}" for t in TOLERANCES_MS))
 
     if rows:
@@ -194,10 +230,13 @@ def main():
               f"{st.median([r['mean'] for r in allv]):>8.0f}"
               f"{st.median([r['bias'] for r in allv]):>+8.0f}"
               f"{st.median([r['gross_pct'] for r in allv]):>8.1f}"
+              f"{st.median([r['overrun_pct'] for r in allv]):>7.1f}"
               f"{st.median([r['fine_median'] for r in allv]):>7.0f}"
               + "".join(f"{st.median([r['within_'+str(t)] for r in allv]):>7.0f}"
                         for t in TOLERANCES_MS))
     print("\nAll values in milliseconds. med/mean/fine = |predicted - reference|;")
+    print("Only verse ONSETS are scored as signed error; over% is the share of clips")
+    print("extending past the next verse's onset marker (end-side, see score_chapter).")
     print("bias = signed mean; gross% = share beyond "
           f"{GROSS_MS:.0f} ms; fine = median of the rest; <N = % within N ms.")
 
